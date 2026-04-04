@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build output
+app/dist/
+
+# Python venv
+venv/
+env/
+.venv/
+
+# Trained models (too large for git - auto-generated on deploy)
+backend/models/
+backend/uploads/
+backend/dataset/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
