@@ -373,17 +373,22 @@ def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
 
-# Auto-train on startup
-with app.app_context():
-    print("PhishGuard API starting up...")
-    success = load_models()
-    if not success:
-        print("No trained models found. Training now (this takes ~2 min on first boot)...")
-        trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
-        X, y = trainer.generate_synthetic_dataset(n_samples=3000)
-        trainer.train_all_models(X, y)
-        load_models()
-    print(f"✓ {len(loaded_models)} models ready: {get_model_list()}")
+# Auto-train on startup in background so port binds immediately
+import threading
+
+def startup_training():
+    with app.app_context():
+        print("PhishGuard API starting up...")
+        success = load_models()
+        if not success:
+            print("No trained models found. Training now (this takes ~2 min on first boot)...")
+            trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
+            X, y = trainer.generate_synthetic_dataset(n_samples=3000)
+            trainer.train_all_models(X, y)
+            load_models()
+        print(f"✓ {len(loaded_models)} models ready: {get_model_list()}")
+
+threading.Thread(target=startup_training, daemon=True).start()
 
 
 if __name__ == '__main__':
