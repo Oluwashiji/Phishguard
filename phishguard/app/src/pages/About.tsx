@@ -1,5 +1,5 @@
 import {
-  Shield, Brain, Database, Lock, AlertTriangle, CheckCircle,
+  Shield, Brain, Database, AlertTriangle, CheckCircle,
   ExternalLink, Code, ArrowRight, Link2, Mail, Cpu
 } from 'lucide-react';
 

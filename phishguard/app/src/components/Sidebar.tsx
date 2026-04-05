@@ -1,4 +1,4 @@
-import { Shield, BarChart3, Info, Settings, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Shield, BarChart3, Info, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Page } from '../App';
 
 interface SidebarProps {

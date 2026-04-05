@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { BarChart3, Trophy, RefreshCw, Target, Activity, TrendingUp, Crosshair } from 'lucide-react';
-import { toast } from 'sonner';
 import { api, type ModelMetrics } from '../services/api';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
