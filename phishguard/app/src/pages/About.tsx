@@ -55,9 +55,9 @@ export function About() {
           </h1>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1.7, paddingLeft: '52px', maxWidth: '680px' }}>
-          A full-stack ML-powered phishing detection platform built as a final-year Computer Science project.
-          It combines feature engineering, multiple classification algorithms, and a modern React interface
-          to identify malicious URLs and phishing emails in real time.
+          An enterprise-grade threat intelligence platform powered by a multi-model ML ensemble.
+          PhishGuard delivers real-time detection of malicious URLs and phishing emails through
+          advanced feature engineering, four classification algorithms, and a high-performance REST API.
         </p>
       </div>
 
@@ -210,9 +210,9 @@ export function About() {
 
       {/* Footer */}
       <div style={{ textAlign: 'center', padding: '32px 0 8px', color: 'var(--text-dim)', fontSize: '13px' }}>
-        <div style={{ marginBottom: '4px' }}>Developed as a Final Year Computer Science Project</div>
+        <div style={{ marginBottom: '4px' }}>Built for scale. Designed for the modern threat landscape.</div>
         <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '11px' }}>
-          Analysing the Effectiveness of Modern Phishing Detection Techniques Using Machine Learning
+          PhishGuard · Real-Time Threat Intelligence · Powered by ML
         </div>
       </div>
     </div>

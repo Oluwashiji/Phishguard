@@ -70,7 +70,7 @@ export function Dashboard() {
   const currentModelLabel = MODELS.find(m => m.name === model)?.label || model;
 
   return (
-    <div style={{ maxWidth: '960px', margin: '0 auto' }}>
+    <div style={{ maxWidth: '960px', margin: '0 auto', width: '100%' }}>
       {/* Header */}
       <div style={{ marginBottom: '32px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
@@ -239,57 +239,57 @@ export function Dashboard() {
           <div
             className={`pg-card ${result.is_phishing ? 'glow-red' : 'glow-green'}`}
             style={{
-              padding: '28px 32px',
+              padding: '20px',
               marginBottom: '16px',
               borderColor: result.is_phishing ? 'rgba(230,57,70,0.35)' : 'rgba(34,211,163,0.25)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '24px',
             }}
           >
-            <div style={{
-              width: '72px', height: '72px', borderRadius: '50%', flexShrink: 0,
-              background: result.is_phishing ? 'var(--red-dim)' : 'var(--green-dim)',
-              border: `2px solid ${result.is_phishing ? 'rgba(230,57,70,0.4)' : 'rgba(34,211,163,0.3)'}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              {result.is_phishing
-                ? <ShieldAlert size={32} style={{ color: 'var(--red)' }} />
-                : <ShieldCheck size={32} style={{ color: 'var(--green)' }} />
-              }
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '13px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>
-                Analysis Result
-              </div>
-              <div className="font-display" style={{
-                fontSize: '32px', fontWeight: 800, letterSpacing: '-0.03em',
-                color: result.is_phishing ? 'var(--red)' : 'var(--green)',
-                marginBottom: '4px',
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+              <div style={{
+                width: '52px', height: '52px', borderRadius: '50%', flexShrink: 0,
+                background: result.is_phishing ? 'var(--red-dim)' : 'var(--green-dim)',
+                border: `2px solid ${result.is_phishing ? 'rgba(230,57,70,0.4)' : 'rgba(34,211,163,0.3)'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                {result.is_phishing ? 'PHISHING DETECTED' : 'LEGITIMATE'}
+                {result.is_phishing
+                  ? <ShieldAlert size={24} style={{ color: 'var(--red)' }} />
+                  : <ShieldCheck size={24} style={{ color: 'var(--green)' }} />
+                }
               </div>
-              <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
-                Confidence: <span style={{ color: 'var(--text)', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{result.confidence}%</span>
-                &nbsp;·&nbsp;
-                Model: <span style={{ color: 'var(--text)' }}>{result.model_used.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
-                &nbsp;·&nbsp;
-                Type: <span style={{ color: 'var(--text)', textTransform: 'uppercase' }}>{result.input_type}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '2px' }}>
+                  Analysis Result
+                </div>
+                <div className="font-display" style={{
+                  fontSize: 'clamp(18px, 4vw, 28px)', fontWeight: 800, letterSpacing: '-0.03em',
+                  color: result.is_phishing ? 'var(--red)' : 'var(--green)',
+                }}>
+                  {result.is_phishing ? 'PHISHING DETECTED' : 'LEGITIMATE'}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: 'clamp(22px, 5vw, 32px)', fontFamily: "'Syne', sans-serif", fontWeight: 800, color: result.is_phishing ? 'var(--red)' : 'var(--green)', lineHeight: 1 }}>
+                  {result.confidence}%
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>confidence</div>
               </div>
             </div>
-            {/* Confidence bar */}
-            <div style={{ textAlign: 'right', minWidth: '120px' }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Confidence
-              </div>
-              <div style={{ fontSize: '36px', fontFamily: "'Syne', sans-serif", fontWeight: 800, color: result.is_phishing ? 'var(--red)' : 'var(--green)' }}>
-                {result.confidence}%
-              </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {[
+                ['Model', result.model_used.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())],
+                ['Type', result.input_type.toUpperCase()],
+                ['Verdict', result.result],
+              ].map(([label, value]) => (
+                <div key={label} style={{ padding: '4px 10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '12px' }}>
+                  <span style={{ color: 'var(--text-dim)' }}>{label}: </span>
+                  <span style={{ color: 'var(--text)' }}>{value}</span>
+                </div>
+              ))}
             </div>
           </div>
 
           {/* Risk indicators + Features row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '16px' }}>
             {/* Risk indicators */}
             <div className="pg-card" style={{ padding: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
