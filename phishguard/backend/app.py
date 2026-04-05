@@ -73,18 +73,27 @@ _model_lock = threading.Lock()
 _models_ready = False
 
 def ensure_models_loaded():
-    """Train models if not present. Called on every request if needed."""
+    """Wait for startup training to finish, or train if somehow missed."""
     global _models_ready
     if _models_ready and loaded_models:
         return
     with _model_lock:
         if _models_ready and loaded_models:
             return
-        print("No models loaded — training now...")
-        trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
-        X, y = trainer.generate_synthetic_dataset(n_samples=2000)
-        trainer.train_all_models(X, y)
-        load_models()
+        # If startup thread is still running, wait briefly
+        import time
+        for _ in range(30):  # wait up to 30s
+            if loaded_models:
+                _models_ready = True
+                return
+            time.sleep(1)
+        # Fallback: train if still nothing loaded
+        if not loaded_models:
+            print("Fallback training triggered...")
+            trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
+            X, y = trainer.generate_synthetic_dataset(n_samples=2000)
+            trainer.train_all_models(X, y)
+            load_models()
         _models_ready = True
 
 
@@ -386,15 +395,17 @@ def internal_error(error):
 
 # Auto-train on startup in background so port binds immediately
 def startup_training():
+    global _models_ready
     with app.app_context():
         print("PhishGuard API starting up...")
         success = load_models()
         if not success:
-            print("No trained models found. Training now (this takes ~2 min on first boot)...")
+            print("No trained models found. Training now...")
             trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
             X, y = trainer.generate_synthetic_dataset(n_samples=2000)
             trainer.train_all_models(X, y)
             load_models()
+        _models_ready = True
         print(f"✓ {len(loaded_models)} models ready: {get_model_list()}")
 
 threading.Thread(target=startup_training, daemon=True).start()
