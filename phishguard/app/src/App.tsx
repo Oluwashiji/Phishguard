@@ -44,7 +44,7 @@ function App() {
 
   if (isMobile) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg)', width: '100vw', overflowX: 'hidden', position: 'relative' }}>
         <header style={{
           height: '56px', flexShrink: 0,
           background: 'var(--surface)', borderBottom: '1px solid var(--border)',
@@ -66,7 +66,7 @@ function App() {
           </span>
         </header>
 
-        <main style={{ flex: 1, overflowY: 'auto', padding: '16px', paddingBottom: '80px' }}>
+        <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px', paddingBottom: '80px', width: '100%', boxSizing: 'border-box' }}>
           {renderPage()}
         </main>
 
