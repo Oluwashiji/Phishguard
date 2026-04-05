@@ -66,9 +66,9 @@ export function About() {
         <div className="font-display" style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text)', marginBottom: '24px' }}>
           Detection Pipeline
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0', overflowX: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0', flexWrap: 'wrap' }}>
           {PIPELINE.map(({ icon: Icon, label, desc }, i) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: '140px' }}>
+            <div key={label} style={{ display: 'flex', alignItems: 'center', flex: '1 1 140px', minWidth: '120px' }}>
               <div style={{ flex: 1, textAlign: 'center', padding: '0 8px' }}>
                 <div style={{
                   width: '52px', height: '52px', borderRadius: '50%', margin: '0 auto 12px',
@@ -98,7 +98,7 @@ export function About() {
       </div>
 
       {/* Feature extraction */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px' }}>
         {/* URL features */}
         <div className="pg-card" style={{ padding: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
@@ -106,7 +106,7 @@ export function About() {
             <span className="font-display" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)' }}>URL Features</span>
             <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-dim)' }}>{URL_FEATURES.length} extracted</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '260px', overflowY: 'auto', paddingRight: '4px' }}>
             {URL_FEATURES.map(([name, desc]) => (
               <div key={name} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px' }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', fontFamily: "'JetBrains Mono', monospace" }}>{name}</span>
@@ -123,7 +123,7 @@ export function About() {
             <span className="font-display" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)' }}>Email Features</span>
             <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-dim)' }}>{EMAIL_FEATURES.length} extracted</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '260px', overflowY: 'auto', paddingRight: '4px' }}>
             {EMAIL_FEATURES.map(([name, desc]) => (
               <div key={name} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px' }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', fontFamily: "'JetBrains Mono', monospace" }}>{name}</span>
@@ -140,7 +140,7 @@ export function About() {
           <Cpu size={16} style={{ color: 'var(--amber)' }} />
           <span className="font-display" style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text)' }}>ML Models</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
           {[
             { name: 'Logistic Regression', type: 'Linear Classifier', color: '#e63946', desc: 'Fast, interpretable baseline. Uses sigmoid function to output probabilities.' },
             { name: 'Random Forest', type: 'Ensemble (100 Trees)', color: '#22d3a3', desc: 'Majority-vote ensemble. Handles non-linearity, provides feature importance.' },

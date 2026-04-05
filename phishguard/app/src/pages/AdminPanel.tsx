@@ -102,8 +102,16 @@ export function AdminPanel() {
         </p>
       </div>
 
-      {/* Status cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      {/* Status cards - swipeable on mobile */}
+      <div style={{
+        display: 'flex',
+        overflowX: 'auto',
+        gap: '12px',
+        marginBottom: '20px',
+        scrollSnapType: 'x mandatory',
+        WebkitOverflowScrolling: 'touch',
+        paddingBottom: '8px',
+      }}>
         {[
           {
             label: 'API Status',
@@ -128,17 +136,22 @@ export function AdminPanel() {
           },
           {
             label: 'Train Size',
-            value: '3 000',
+            value: '3,000',
             icon: HardDrive,
             color: 'var(--text-muted)',
             bg: 'var(--surface2)',
           },
         ].map(({ label, value, icon: Icon, color, bg }) => (
-          <div key={label} className="pg-card" style={{ padding: '16px' }}>
+          <div key={label} className="pg-card" style={{
+            padding: '16px',
+            scrollSnapAlign: 'start',
+            flexShrink: 0,
+            width: 'clamp(150px, 55vw, 200px)',
+          }}>
             <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>{label}</div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span className="font-display" style={{ fontSize: '20px', fontWeight: 700, color }}>{value}</span>
-              <div style={{ width: '34px', height: '34px', borderRadius: '8px', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: '34px', height: '34px', borderRadius: '8px', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Icon size={16} style={{ color }} />
               </div>
             </div>
@@ -153,7 +166,7 @@ export function AdminPanel() {
           <span className="font-display" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>Model Management</span>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', marginBottom: '20px' }}>
           {/* Current models */}
           <div style={{ padding: '16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px' }}>
             <div style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '12px' }}>Active Models</div>
@@ -232,7 +245,7 @@ export function AdminPanel() {
           <Database size={16} style={{ color: 'var(--green)' }} />
           <span className="font-display" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>Dataset</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
           {/* Upload zone */}
           <div style={{
             padding: '28px', border: '2px dashed var(--border2)', borderRadius: '10px',
@@ -282,17 +295,18 @@ export function AdminPanel() {
             const c = METHOD_COLORS[method] ?? { bg: 'var(--surface2)', text: 'var(--text-muted)' };
             return (
               <div key={path} style={{
-                display: 'flex', alignItems: 'center', gap: '12px',
                 padding: '9px 12px', background: 'var(--surface2)',
                 border: '1px solid var(--border)', borderRadius: '7px',
               }}>
-                <span style={{
-                  padding: '2px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: 700,
-                  letterSpacing: '0.06em', flexShrink: 0,
-                  background: c.bg, color: c.text,
-                }}>{method}</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: 'var(--text)', flex: 1 }}>{path}</span>
-                <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{desc}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                  <span style={{
+                    padding: '2px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: 700,
+                    letterSpacing: '0.06em', flexShrink: 0,
+                    background: c.bg, color: c.text,
+                  }}>{method}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: 'var(--text)', wordBreak: 'break-all' }}>{path}</span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', paddingLeft: '4px' }}>{desc}</div>
               </div>
             );
           })}

@@ -61,9 +61,9 @@ export function ModelComparison() {
   };
 
   return (
-    <div style={{ maxWidth: '1080px', margin: '0 auto' }}>
+    <div style={{ maxWidth: '1080px', margin: '0 auto', width: '100%' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
             <div style={{ padding: '8px', background: 'var(--blue-dim)', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.2)' }}>
@@ -122,12 +122,24 @@ export function ModelComparison() {
         </div>
       )}
 
-      {/* Model cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+      {/* Model cards - horizontal scroll snap on mobile */}
+      <div style={{
+        display: 'flex',
+        overflowX: 'auto',
+        gap: '12px',
+        marginBottom: '24px',
+        scrollSnapType: 'x mandatory',
+        WebkitOverflowScrolling: 'touch',
+        paddingBottom: '8px',
+        msOverflowStyle: 'none',
+      }}>
         {metrics.map((m, i) => (
           <div key={m.model_name} className="pg-card" style={{
             padding: '16px',
             borderColor: m.model_name === best?.model_name ? 'rgba(34,211,163,0.25)' : undefined,
+            scrollSnapAlign: 'start',
+            flexShrink: 0,
+            width: 'clamp(200px, 70vw, 240px)',
           }}>
             <div style={{ marginBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
@@ -219,7 +231,7 @@ export function ModelComparison() {
         <div className="font-display" style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text)', marginBottom: '20px' }}>
           Algorithm Overview
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
           {[
             {
               title: 'Logistic Regression',
@@ -253,7 +265,7 @@ export function ModelComparison() {
             <div key={title} style={{ padding: '16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px', borderLeft: `3px solid ${color}` }}>
               <div className="font-display" style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)', marginBottom: '6px' }}>{title}</div>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px', lineHeight: 1.5 }}>{desc}</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '8px' }}>
                 <div>
                   <div style={{ fontSize: '10px', color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Pros</div>
                   {pros.map(p => <div key={p} style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '2px' }}>· {p}</div>)}
