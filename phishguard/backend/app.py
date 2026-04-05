@@ -6,6 +6,7 @@ Flask backend with auto model training on first boot
 import os
 import json
 import joblib
+import threading
 import numpy as np
 from datetime import datetime
 from typing import Dict, List, Any
@@ -67,14 +68,24 @@ def load_models():
     return len(loaded_models) > 0
 
 
+import threading
+_model_lock = threading.Lock()
+_models_ready = False
+
 def ensure_models_loaded():
     """Train models if not present. Called on every request if needed."""
-    if not loaded_models:
+    global _models_ready
+    if _models_ready and loaded_models:
+        return
+    with _model_lock:
+        if _models_ready and loaded_models:
+            return
         print("No models loaded — training now...")
         trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
-        X, y = trainer.generate_synthetic_dataset(n_samples=3000)
+        X, y = trainer.generate_synthetic_dataset(n_samples=2000)
         trainer.train_all_models(X, y)
         load_models()
+        _models_ready = True
 
 
 def get_model_list():
@@ -374,8 +385,6 @@ def internal_error(error):
 
 
 # Auto-train on startup in background so port binds immediately
-import threading
-
 def startup_training():
     with app.app_context():
         print("PhishGuard API starting up...")
@@ -383,7 +392,7 @@ def startup_training():
         if not success:
             print("No trained models found. Training now (this takes ~2 min on first boot)...")
             trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
-            X, y = trainer.generate_synthetic_dataset(n_samples=3000)
+            X, y = trainer.generate_synthetic_dataset(n_samples=2000)
             trainer.train_all_models(X, y)
             load_models()
         print(f"✓ {len(loaded_models)} models ready: {get_model_list()}")
