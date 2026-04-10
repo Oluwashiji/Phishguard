@@ -184,7 +184,11 @@ def index():
 
 @app.route('/api/ping', methods=['GET'])
 def ping():
-    return jsonify({'ok': True}), 200
+    return jsonify({
+        'ok': True,
+        'models_ready': len(loaded_models) > 0,
+        'models_loaded': get_model_list()
+    }), 200
 
 
 @app.route('/api/health', methods=['GET'])
@@ -386,11 +390,33 @@ def startup_training():
         print("PhishGuard API starting up...")
         success = load_models()
         if not success:
-            print("No trained models found. Training now...")
+            print("No trained models found. Training fast models first...")
             trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
-            X, y = trainer.generate_synthetic_dataset(n_samples=2000)
-            trainer.train_all_models(X, y)
+            X, y = trainer.generate_synthetic_dataset(n_samples=500)
+            X_train, X_test, y_train, y_test, scaler = trainer.prepare_data(X, y)
+            trainer.feature_names = X.columns.tolist()
+            joblib.dump(trainer.feature_names, os.path.join(MODEL_DIR, "feature_names.pkl"))
+            for model_name, train_func in [
+                ("logistic_regression", trainer.train_logistic_regression),
+                ("random_forest", trainer.train_random_forest),
+            ]:
+                print(f"Training {model_name}...")
+                model = train_func(X_train, y_train)
+                joblib.dump(model, os.path.join(MODEL_DIR, f"{model_name}.pkl"))
+                joblib.dump(scaler, os.path.join(MODEL_DIR, f"{model_name}_scaler.pkl"))
             load_models()
+            print("Fast models ready. Training SVM + NN in background...")
+            for model_name, train_func in [
+                ("neural_network", trainer.train_neural_network),
+                ("svm", trainer.train_svm),
+            ]:
+                try:
+                    model = train_func(X_train, y_train)
+                    joblib.dump(model, os.path.join(MODEL_DIR, f"{model_name}.pkl"))
+                    joblib.dump(scaler, os.path.join(MODEL_DIR, f"{model_name}_scaler.pkl"))
+                    load_models()
+                except Exception as e:
+                    print(f"Skipping {model_name}: {e}")
         _models_ready = True
         print(f"✓ {len(loaded_models)} models ready: {get_model_list()}")
 
