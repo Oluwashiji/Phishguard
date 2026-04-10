@@ -201,8 +201,12 @@ def index():
     return jsonify({'message': 'PhishGuard API is running', 'version': '1.0.0'})
 
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
+@app.route('/api/ping', methods=['GET'])
+def ping():
+    return jsonify({'ok': True}), 200
+
+
+
     ensure_models_loaded()
     return jsonify({
         'status': 'healthy',
