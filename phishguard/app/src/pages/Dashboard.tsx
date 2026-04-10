@@ -61,7 +61,12 @@ export function Dashboard() {
       else toast.success('✓ Input appears legitimate');
     } catch (err) {
       clearInterval(iv);
-      toast.error('Scan failed: ' + (err as Error).message);
+      const msg = (err as Error).message;
+      if (msg.includes('still loading') || msg.includes('503')) {
+        toast.error('Backend is warming up — wait ~30 seconds and try again.');
+      } else {
+        toast.error('Scan failed: ' + msg);
+      }
     } finally {
       setTimeout(() => { setScanning(false); setProgress(0); }, 600);
     }

@@ -73,28 +73,11 @@ _model_lock = threading.Lock()
 _models_ready = False
 
 def ensure_models_loaded():
-    """Wait for startup training to finish, or train if somehow missed."""
+    """Non-blocking check. Models are trained in the background on startup."""
     global _models_ready
     if _models_ready and loaded_models:
         return
-    with _model_lock:
-        if _models_ready and loaded_models:
-            return
-        # If startup thread is still running, wait briefly
-        import time
-        for _ in range(30):  # wait up to 30s
-            if loaded_models:
-                _models_ready = True
-                return
-            time.sleep(1)
-        # Fallback: train if still nothing loaded
-        if not loaded_models:
-            print("Fallback training triggered...")
-            trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
-            X, y = trainer.generate_synthetic_dataset(n_samples=2000)
-            trainer.train_all_models(X, y)
-            load_models()
-        _models_ready = True
+    return
 
 
 def get_model_list():
@@ -115,8 +98,6 @@ def prepare_features_for_model(features: Dict, model_name: str) -> np.ndarray:
 
 
 def make_prediction(input_data: str, input_type: str, model_name: str) -> Dict:
-    ensure_models_loaded()
-
     if model_name not in loaded_models:
         if loaded_models:
             model_name = list(loaded_models.keys())[0]
@@ -206,8 +187,8 @@ def ping():
     return jsonify({'ok': True}), 200
 
 
-
-    ensure_models_loaded()
+@app.route('/api/health', methods=['GET'])
+def health():
     return jsonify({
         'status': 'healthy',
         'models_loaded': get_model_list(),
@@ -217,7 +198,6 @@ def ping():
 
 @app.route('/api/models', methods=['GET'])
 def get_models():
-    ensure_models_loaded()
     models = [
         {'name': name, 'display_name': name.replace('_', ' ').title(), 'loaded': True}
         for name in get_model_list()
@@ -228,6 +208,8 @@ def get_models():
 @app.route('/api/predict', methods=['POST'])
 def predict():
     try:
+        if not loaded_models:
+            return jsonify({'error': 'Models are still loading. Please wait a moment and try again.'}), 503
         data = request.get_json()
         if not data:
             return jsonify({'error': 'No data provided'}), 400
@@ -247,6 +229,8 @@ def predict():
 @app.route('/api/predict/all', methods=['POST'])
 def predict_all_models():
     try:
+        if not loaded_models:
+            return jsonify({'error': 'Models are still loading. Please wait a moment and try again.'}), 503
         data = request.get_json()
         if not data:
             return jsonify({'error': 'No data provided'}), 400
@@ -254,7 +238,6 @@ def predict_all_models():
         input_type = data.get('type', 'auto').lower()
         if not input_data:
             return jsonify({'error': 'No input provided'}), 400
-        ensure_models_loaded()
         results = []
         for model_name in get_model_list():
             result = make_prediction(input_data, input_type, model_name)
@@ -301,7 +284,6 @@ def get_metrics():
 @app.route('/api/features/importance', methods=['GET'])
 def get_feature_importance():
     try:
-        ensure_models_loaded()
         model_name = request.args.get('model', 'random_forest')
         trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
         importance = trainer.get_feature_importance(model_name)
