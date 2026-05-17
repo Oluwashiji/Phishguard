@@ -1,27 +1,26 @@
 import { useState, useEffect } from 'react';
 import {
   Settings, RefreshCw, Database, Activity, CheckCircle,
-  AlertCircle, Play, FileText, Cpu, HardDrive, Upload, Wifi, WifiOff
+  AlertCircle, FileText, Cpu, HardDrive, Upload, Wifi, WifiOff, Info,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { api } from '../services/api';
 
 type LogType = 'success' | 'info' | 'error' | 'warn';
 interface LogEntry { ts: string; msg: string; type: LogType; }
 
+// /api/train has been removed — models are pre-trained offline via training/train.py
 const ENDPOINTS = [
-  { method: 'GET', path: '/api/health', desc: 'Health check & model list' },
-  { method: 'GET', path: '/api/models', desc: 'Available models' },
-  { method: 'POST', path: '/api/predict', desc: 'Single model prediction' },
-  { method: 'POST', path: '/api/predict/all', desc: 'Predict with all models' },
-  { method: 'GET', path: '/api/metrics', desc: 'Model performance metrics' },
-  { method: 'GET', path: '/api/features/importance', desc: 'Feature importance scores' },
-  { method: 'POST', path: '/api/analyze', desc: 'Feature extraction only' },
-  { method: 'POST', path: '/api/train', desc: 'Retrain all models' },
+  { method: 'GET',  path: '/api/health',             desc: 'Health check & loaded model list' },
+  { method: 'GET',  path: '/api/models',             desc: 'Available models' },
+  { method: 'POST', path: '/api/predict',            desc: 'Single-model prediction' },
+  { method: 'POST', path: '/api/predict/all',        desc: 'Ensemble prediction (all models)' },
+  { method: 'GET',  path: '/api/metrics',            desc: 'Model performance metrics' },
+  { method: 'GET',  path: '/api/features/importance', desc: 'Feature importance scores' },
+  { method: 'POST', path: '/api/analyze',            desc: 'Feature extraction only (no ML)' },
 ];
 
 const METHOD_COLORS: Record<string, { bg: string; text: string }> = {
-  GET:  { bg: 'rgba(59,130,246,0.12)', text: '#3b82f6' },
+  GET:  { bg: 'rgba(59,130,246,0.12)',  text: '#3b82f6' },
   POST: { bg: 'rgba(34,211,163,0.12)', text: '#22d3a3' },
 };
 
@@ -30,11 +29,9 @@ function timestamp() {
 }
 
 export function AdminPanel() {
-  const [training, setTraining] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [health, setHealth] = useState<{ status: string; models_loaded: string[] } | null>(null);
-  const [online, setOnline] = useState<boolean | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([
+  const [health, setHealth]   = useState<{ status: string; models_loaded: string[] } | null>(null);
+  const [online, setOnline]   = useState<boolean | null>(null);
+  const [logs,   setLogs]     = useState<LogEntry[]>([
     { ts: timestamp(), msg: 'Admin panel loaded', type: 'info' },
   ]);
 
@@ -52,27 +49,6 @@ export function AdminPanel() {
     } catch (err) {
       setOnline(false);
       addLog('API unreachable: ' + (err as Error).message, 'error');
-    }
-  };
-
-  const handleRetrain = async () => {
-    setTraining(true);
-    setProgress(0);
-    addLog('Starting model retraining (3 000 samples)...', 'info');
-    const iv = setInterval(() => setProgress(p => Math.min(p + Math.random() * 9, 92)), 500);
-    try {
-      await api.retrainModels(3000);
-      clearInterval(iv);
-      setProgress(100);
-      addLog('All models retrained successfully', 'success');
-      toast.success('Models retrained!');
-      await checkHealth();
-    } catch (err) {
-      clearInterval(iv);
-      addLog('Training failed: ' + (err as Error).message, 'error');
-      toast.error('Training failed: ' + (err as Error).message);
-    } finally {
-      setTimeout(() => { setTraining(false); setProgress(0); }, 800);
     }
   };
 
@@ -98,19 +74,14 @@ export function AdminPanel() {
           </button>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '14px', paddingLeft: '52px' }}>
-          Monitor system health, retrain models, and inspect the API.
+          Monitor system health and inspect the API.
         </p>
       </div>
 
-      {/* Status cards - swipeable on mobile */}
+      {/* Status cards */}
       <div style={{
-        display: 'flex',
-        overflowX: 'auto',
-        gap: '12px',
-        marginBottom: '20px',
-        scrollSnapType: 'x mandatory',
-        WebkitOverflowScrolling: 'touch',
-        paddingBottom: '8px',
+        display: 'flex', overflowX: 'auto', gap: '12px', marginBottom: '20px',
+        scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch', paddingBottom: '8px',
       }}>
         {[
           {
@@ -118,7 +89,7 @@ export function AdminPanel() {
             value: online === null ? 'Checking...' : online ? 'Online' : 'Offline',
             icon: online ? Wifi : WifiOff,
             color: online === null ? 'var(--text-dim)' : online ? 'var(--green)' : 'var(--red)',
-            bg: online === null ? 'var(--surface2)' : online ? 'var(--green-dim)' : 'var(--red-dim)',
+            bg:    online === null ? 'var(--surface2)' : online ? 'var(--green-dim)' : 'var(--red-dim)',
           },
           {
             label: 'Models Loaded',
@@ -129,24 +100,22 @@ export function AdminPanel() {
           },
           {
             label: 'API Version',
-            value: 'v1.0.0',
+            value: 'v2.0.0',
             icon: Database,
             color: 'var(--amber)',
             bg: 'var(--amber-dim)',
           },
           {
-            label: 'Train Size',
-            value: '3,000',
+            label: 'Training',
+            value: 'Offline',
             icon: HardDrive,
             color: 'var(--text-muted)',
             bg: 'var(--surface2)',
           },
         ].map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className="pg-card" style={{
-            padding: '16px',
-            scrollSnapAlign: 'start',
-            flexShrink: 0,
-            width: 'clamp(150px, 55vw, 200px)',
+            padding: '16px', scrollSnapAlign: 'start',
+            flexShrink: 0, width: 'clamp(150px, 55vw, 200px)',
           }}>
             <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>{label}</div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -159,15 +128,15 @@ export function AdminPanel() {
         ))}
       </div>
 
-      {/* Model management */}
+      {/* Model status */}
       <div className="pg-card" style={{ padding: '24px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
           <Cpu size={16} style={{ color: 'var(--blue)' }} />
-          <span className="font-display" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>Model Management</span>
+          <span className="font-display" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>Model Status</span>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', marginBottom: '20px' }}>
-          {/* Current models */}
+          {/* Active models */}
           <div style={{ padding: '16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px' }}>
             <div style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '12px' }}>Active Models</div>
             {models.length > 0 ? models.map(m => (
@@ -190,12 +159,12 @@ export function AdminPanel() {
           <div style={{ padding: '16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px' }}>
             <div style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '12px' }}>Training Config</div>
             {[
-              ['Dataset Size', '3 000 samples'],
-              ['Train / Test Split', '80 / 20'],
-              ['Cross-validation', '5-fold'],
-              ['URL Features', '18 extracted'],
-              ['Email Features', '17 extracted'],
-              ['Random Seed', '42 (reproducible)'],
+              ['Dataset Size',        '5 000 samples'],
+              ['Train / Test Split',  '80 / 20'],
+              ['Cross-validation',    '5-fold'],
+              ['URL Features',        '18 extracted'],
+              ['Email Features',      '17 extracted'],
+              ['Random Seed',         '42 (reproducible)'],
             ].map(([k, v]) => (
               <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
                 <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{k}</span>
@@ -205,37 +174,24 @@ export function AdminPanel() {
           </div>
         </div>
 
-        {/* Retrain */}
-        <div style={{ padding: '16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: training ? '16px' : 0 }}>
-            <div>
-              <div className="font-display" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)', marginBottom: '2px' }}>Retrain All Models</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                Generates fresh synthetic dataset and retrains all 4 algorithms. Takes ~2 min.
-              </div>
+        {/* Training info banner (replaces retrain button) */}
+        <div style={{
+          padding: '16px', background: 'var(--surface2)',
+          border: '1px solid var(--border)', borderRadius: '10px',
+          display: 'flex', alignItems: 'flex-start', gap: '12px',
+        }}>
+          <Info size={16} style={{ color: 'var(--blue)', flexShrink: 0, marginTop: '2px' }} />
+          <div>
+            <div className="font-display" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)', marginBottom: '4px' }}>
+              Models are pre-trained offline
             </div>
-            <button
-              className="btn-primary"
-              style={{ padding: '9px 22px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px', marginLeft: '16px', flexShrink: 0 }}
-              onClick={handleRetrain}
-              disabled={training}
-            >
-              {training
-                ? <><RefreshCw size={13} className="animate-spin-custom" /> Training...</>
-                : <><Play size={13} /> Start Training</>
-              }
-            </button>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              Training is handled by <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '11px' }}>training/train.py</code> and
+              runs locally or in CI — never on the live server. To retrain,
+              run <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '11px' }}>python training/train.py</code> and
+              commit the updated <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '11px' }}>backend/models/</code> artefacts.
+            </div>
           </div>
-          {training && (
-            <div>
-              <div className="pg-progress" style={{ marginBottom: '6px' }}>
-                <div className="pg-progress-bar" style={{ width: `${progress}%` }} />
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-dim)', textAlign: 'center' }}>
-                {Math.round(progress)}% — Training in progress...
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -246,7 +202,6 @@ export function AdminPanel() {
           <span className="font-display" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>Dataset</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-          {/* Upload zone */}
           <div style={{
             padding: '28px', border: '2px dashed var(--border2)', borderRadius: '10px',
             textAlign: 'center', cursor: 'default',
@@ -258,28 +213,22 @@ export function AdminPanel() {
               Coming Soon
             </button>
           </div>
-          {/* Stats */}
           <div style={{ padding: '16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px' }}>
             <div style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '12px' }}>
               Current Dataset
             </div>
             {[
-              ['Source', 'Synthetic (generated)'],
-              ['Total Samples', '3 000'],
-              ['Phishing', '1 500 (50%)'],
-              ['Legitimate', '1 500 (50%)'],
-              ['Balance', 'Stratified'],
+              ['Source',     'Synthetic (generated)'],
+              ['Total',      '5 000 samples'],
+              ['Phishing',   '2 500 (50%)'],
+              ['Legitimate', '2 500 (50%)'],
+              ['Balance',    'Stratified'],
             ].map(([k, v]) => (
               <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
                 <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{k}</span>
                 <span style={{ fontSize: '12px', color: 'var(--text)' }}>{v}</span>
               </div>
             ))}
-            <div style={{ marginTop: '12px', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', fontFamily: "'JetBrains Mono', monospace", fontSize: '11px', color: 'var(--text-dim)' }}>
-              <div>url,label</div>
-              <div>https://google.com,<span style={{ color: 'var(--green)' }}>0</span></div>
-              <div>http://evil.com/login,<span style={{ color: 'var(--red)' }}>1</span></div>
-            </div>
           </div>
         </div>
       </div>
@@ -301,8 +250,7 @@ export function AdminPanel() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
                   <span style={{
                     padding: '2px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: 700,
-                    letterSpacing: '0.06em', flexShrink: 0,
-                    background: c.bg, color: c.text,
+                    letterSpacing: '0.06em', flexShrink: 0, background: c.bg, color: c.text,
                   }}>{method}</span>
                   <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: 'var(--text)', wordBreak: 'break-all' }}>{path}</span>
                 </div>
@@ -322,8 +270,10 @@ export function AdminPanel() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '240px', overflowY: 'auto' }}>
           {logs.map((log, i) => {
-            const icon = log.type === 'success' ? <CheckCircle size={12} style={{ color: 'var(--green)', flexShrink: 0 }} />
-              : log.type === 'error' ? <AlertCircle size={12} style={{ color: 'var(--red)', flexShrink: 0 }} />
+            const icon = log.type === 'success'
+              ? <CheckCircle size={12} style={{ color: 'var(--green)', flexShrink: 0 }} />
+              : log.type === 'error'
+              ? <AlertCircle size={12} style={{ color: 'var(--red)', flexShrink: 0 }} />
               : <Activity size={12} style={{ color: 'var(--blue)', flexShrink: 0 }} />;
             return (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px' }}>

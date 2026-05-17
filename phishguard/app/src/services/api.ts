@@ -61,14 +61,14 @@ class ApiService {
     return this.fetch<{ models: Array<{ name: string; display_name: string; loaded: boolean }>; count: number }>('/models');
   }
 
-  async predict(input: string, type: string = 'auto', model: string = 'random_forest'): Promise<PredictionResult> {
+  async predict(input: string, type = 'auto', model = 'random_forest'): Promise<PredictionResult> {
     return this.fetch<PredictionResult>('/predict', {
       method: 'POST',
       body: JSON.stringify({ input, type, model }),
     });
   }
 
-  async predictAll(input: string, type: string = 'auto'): Promise<AllModelsPrediction> {
+  async predictAll(input: string, type = 'auto'): Promise<AllModelsPrediction> {
     return this.fetch<AllModelsPrediction>('/predict/all', {
       method: 'POST',
       body: JSON.stringify({ input, type }),
@@ -79,11 +79,13 @@ class ApiService {
     return this.fetch<{ metrics: ModelMetrics[] }>('/metrics');
   }
 
-  async getFeatureImportance(model: string = 'random_forest') {
-    return this.fetch<{ model: string; feature_importance: Record<string, number> }>(`/features/importance?model=${model}`);
+  async getFeatureImportance(model = 'random_forest') {
+    return this.fetch<{ model: string; feature_importance: Record<string, number> }>(
+      `/features/importance?model=${model}`,
+    );
   }
 
-  async analyze(input: string, type: string = 'auto') {
+  async analyze(input: string, type = 'auto') {
     return this.fetch<{
       input_type: string;
       features: Record<string, number | boolean>;
@@ -92,13 +94,6 @@ class ApiService {
     }>('/analyze', {
       method: 'POST',
       body: JSON.stringify({ input, type }),
-    });
-  }
-
-  async retrainModels(nSamples: number = 3000) {
-    return this.fetch<{ message: string; results: unknown; timestamp: string }>('/train', {
-      method: 'POST',
-      body: JSON.stringify({ n_samples: nSamples }),
     });
   }
 

@@ -1,427 +1,398 @@
 """
-PhishGuard - Phishing Detection API
-Flask backend with auto model training on first boot
+PhishGuard — Inference API
+===========================
+Flask application for phishing detection.
+
+Design constraints
+------------------
+- Models are loaded ONCE at startup from pre-trained .pkl files.
+- No training code, no background threads, no artificial delays.
+- All prediction paths are stateless: one request → one prediction.
+- Cold-start time is bounded by joblib.load() calls only (~1–2 s).
+
+Run locally:
+    python app.py
+
+Production (Render / gunicorn):
+    gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT --timeout 60
 """
 
-import os
 import json
-import joblib
-import threading
-import numpy as np
+import os
 from datetime import datetime
-from typing import Dict, List, Any
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from werkzeug.utils import secure_filename
+from typing import Dict, List
 
-from feature_extraction import extract_features, URLFeatureExtractor, EmailFeatureExtractor
-from model_training import PhishingModelTrainer
+import joblib
+import numpy as np
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+
+from feature_extraction import extract_features
+
+# ── App setup ────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
+CORS(app, resources={r'/api/*': {'origins': '*'}})
 
-# CORS: allow all origins (set to your frontend URL in production if desired)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, 'models')
-DATASET_DIR = os.path.join(BASE_DIR, 'dataset')
-UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
-ALLOWED_EXTENSIONS = {'csv', 'txt', 'json'}
 
-os.makedirs(MODEL_DIR, exist_ok=True)
-os.makedirs(DATASET_DIR, exist_ok=True)
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# ── Model registry ───────────────────────────────────────────────────────────
+# Populated once at module load time (gunicorn worker start).
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+_MODEL_FILES = {
+    'logistic_regression': 'logistic_regression.pkl',
+    'random_forest':       'random_forest.pkl',
+    'neural_network':      'neural_network.pkl',
+    'svm':                 'svm.pkl',
+}
 
-loaded_models = {}
-model_scalers = {}
-feature_names = []
-
-
-def load_models():
-    global loaded_models, model_scalers, feature_names
-
-    model_files = {
-        'logistic_regression': 'logistic_regression.pkl',
-        'random_forest': 'random_forest.pkl',
-        'neural_network': 'neural_network.pkl',
-        'svm': 'svm.pkl'
-    }
-
-    for model_name, filename in model_files.items():
-        model_path = os.path.join(MODEL_DIR, filename)
-        scaler_path = os.path.join(MODEL_DIR, f'{model_name}_scaler.pkl')
-        if os.path.exists(model_path):
-            try:
-                loaded_models[model_name] = joblib.load(model_path)
-                if os.path.exists(scaler_path):
-                    model_scalers[model_name] = joblib.load(scaler_path)
-            except Exception as e:
-                print(f"Error loading {model_name}: {e}")
-
-    feature_names_path = os.path.join(MODEL_DIR, 'feature_names.pkl')
-    if os.path.exists(feature_names_path):
-        feature_names = joblib.load(feature_names_path)
-
-    return len(loaded_models) > 0
+models: Dict       = {}   # name → fitted sklearn estimator
+scalers: Dict      = {}   # name → fitted StandardScaler
+feature_names: List = []  # ordered list of feature column names
 
 
-import threading
-_model_lock = threading.Lock()
-_models_ready = False
+def _load_models() -> None:
+    """Load all model artefacts from MODEL_DIR into module-level dicts."""
+    global feature_names
 
-def ensure_models_loaded():
-    """Non-blocking check. Models are trained in the background on startup."""
-    global _models_ready
-    if _models_ready and loaded_models:
-        return
-    return
+    fn_path = os.path.join(MODEL_DIR, 'feature_names.pkl')
+    if os.path.exists(fn_path):
+        feature_names = joblib.load(fn_path)
+    else:
+        raise FileNotFoundError(
+            f"feature_names.pkl not found in {MODEL_DIR}. "
+            "Run training/train.py first."
+        )
+
+    loaded = []
+    for name, filename in _MODEL_FILES.items():
+        model_path  = os.path.join(MODEL_DIR, filename)
+        scaler_path = os.path.join(MODEL_DIR, f'{name}_scaler.pkl')
+
+        if not os.path.exists(model_path):
+            print(f"[warn] {filename} not found — skipping {name}")
+            continue
+
+        models[name]  = joblib.load(model_path)
+        if os.path.exists(scaler_path):
+            scalers[name] = joblib.load(scaler_path)
+        loaded.append(name)
+
+    if not models:
+        raise RuntimeError(
+            f"No model files found in {MODEL_DIR}. "
+            "Run training/train.py to generate them."
+        )
+
+    print(f"[startup] Loaded {len(loaded)} models: {loaded}")
 
 
-def get_model_list():
-    return list(loaded_models.keys())
+# Load at import time so the first request is fast
+_load_models()
 
 
-def prepare_features_for_model(features: Dict, model_name: str) -> np.ndarray:
-    feature_array = []
+# ── Preprocessing ────────────────────────────────────────────────────────────
+
+def _vectorise(features: Dict, model_name: str) -> np.ndarray:
+    """Convert a feature dict to a scaled numpy array for *model_name*."""
+    row = []
     for name in feature_names:
-        value = features.get(name, 0)
-        if isinstance(value, bool):
-            value = int(value)
-        feature_array.append(value)
-    X = np.array(feature_array).reshape(1, -1)
-    if model_name in model_scalers:
-        X = model_scalers[model_name].transform(X)
+        val = features.get(name, 0)
+        row.append(int(val) if isinstance(val, bool) else val)
+
+    X = np.array(row, dtype=float).reshape(1, -1)
+
+    if model_name in scalers:
+        X = scalers[model_name].transform(X)
+
     return X
 
 
-def make_prediction(input_data: str, input_type: str, model_name: str) -> Dict:
-    if model_name not in loaded_models:
-        if loaded_models:
-            model_name = list(loaded_models.keys())[0]
-        else:
-            return {'error': 'No models available'}
+# ── Prediction helpers ───────────────────────────────────────────────────────
 
-    model = loaded_models[model_name]
-    features = extract_features(input_data, input_type)
-    input_type_detected = features.pop('input_type', 'unknown')
+def _single_predict(input_data: str, input_type: str, model_name: str) -> Dict:
+    """Run one model against one input and return a structured result dict."""
+    if model_name not in models:
+        model_name = next(iter(models))  # fall back to first available
 
-    X = prepare_features_for_model(features, model_name)
+    raw_features  = extract_features(input_data, input_type)
+    detected_type = raw_features.pop('input_type', 'unknown')
 
-    prediction = model.predict(X)[0]
-    probability = model.predict_proba(X)[0] if hasattr(model, 'predict_proba') else [0.5, 0.5]
-    confidence = float(probability[1] if prediction == 1 else probability[0])
-    is_phishing = bool(prediction == 1)
-
-    suspicious_features = identify_suspicious_features(features, input_type_detected)
+    X          = _vectorise(raw_features, model_name)
+    model      = models[model_name]
+    pred       = model.predict(X)[0]
+    proba      = model.predict_proba(X)[0] if hasattr(model, 'predict_proba') else [0.5, 0.5]
+    is_phishing = bool(pred == 1)
+    confidence  = float(proba[1] if is_phishing else proba[0])
 
     return {
-        'result': "Phishing" if is_phishing else "Legitimate",
-        'is_phishing': is_phishing,
-        'confidence': round(confidence * 100, 2),
-        'model_used': model_name,
-        'input_type': input_type_detected,
-        'features': features,
-        'suspicious_features': suspicious_features,
-        'timestamp': datetime.now().isoformat()
+        'result':              'Phishing' if is_phishing else 'Legitimate',
+        'is_phishing':         is_phishing,
+        'confidence':          round(confidence * 100, 2),
+        'model_used':          model_name,
+        'input_type':          detected_type,
+        'features':            raw_features,
+        'suspicious_features': _suspicious_features(raw_features, detected_type),
+        'timestamp':           datetime.now().isoformat(),
     }
 
 
-def identify_suspicious_features(features: Dict, input_type: str) -> List[Dict]:
+def _ensemble_predict(input_data: str, input_type: str) -> Dict:
+    """Run all loaded models and aggregate via majority vote."""
+    results = []
+    for name in models:
+        r = _single_predict(input_data, input_type, name)
+        results.append({
+            'model':       name,
+            'result':      r['result'],
+            'confidence':  r['confidence'],
+            'is_phishing': r['is_phishing'],
+        })
+
+    phishing_votes = sum(1 for r in results if r['is_phishing'])
+    total          = len(results)
+    avg_confidence = float(np.mean([r['confidence'] for r in results])) if results else 0.0
+
+    return {
+        'individual_results':   results,
+        'consensus':            'Phishing' if phishing_votes > total / 2 else 'Legitimate',
+        'consensus_confidence': round(avg_confidence, 2),
+        'agreement_ratio':      f'{phishing_votes}/{total}',
+        'timestamp':            datetime.now().isoformat(),
+    }
+
+
+# ── Suspicious-feature annotation ───────────────────────────────────────────
+
+_HIGH_SEVERITY = {'has_ip_address', 'has_at_symbol', 'brand_in_subdomain'}
+
+_URL_CHECKS = [
+    ('has_ip_address',          lambda f: f.get('has_ip_address', False),         'Contains IP address instead of domain'),
+    ('has_at_symbol',           lambda f: f.get('has_at_symbol', False),           'Contains @ symbol (credential trick)'),
+    ('is_shortened',            lambda f: f.get('is_shortened', False),            'Uses URL shortening service'),
+    ('has_suspicious_tld',      lambda f: f.get('has_suspicious_tld', False),      'Suspicious top-level domain'),
+    ('brand_in_subdomain',      lambda f: f.get('brand_in_subdomain', False),      'Brand name in subdomain (spoofing)'),
+    ('has_double_slash',        lambda f: f.get('has_double_slash', False),        'Double slash in path (redirection)'),
+    ('url_length',              lambda f: f.get('url_length', 0) > 75,             lambda f: f"Very long URL ({f['url_length']} chars)"),
+    ('subdomain_count',         lambda f: f.get('subdomain_count', 0) > 2,        lambda f: f"Many subdomains ({f['subdomain_count']})"),
+    ('suspicious_keywords_count', lambda f: f.get('suspicious_keywords_count', 0) > 0,
+                                                                                    lambda f: f"Contains {f['suspicious_keywords_count']} suspicious keywords"),
+    ('entropy',                 lambda f: f.get('entropy', 0) > 4.5,              lambda f: f"High entropy ({f['entropy']:.2f}) — possibly random/generated"),
+]
+
+_EMAIL_CHECKS = [
+    ('has_html',                 lambda f: f.get('has_html', False),              'Contains HTML content'),
+    ('has_suspicious_patterns',  lambda f: f.get('has_suspicious_patterns', False), 'Contains suspicious patterns'),
+    ('sender_mismatch',          lambda f: f.get('sender_mismatch', False),       'Sender display name mismatch'),
+    ('reply_to_different',       lambda f: f.get('reply_to_different', False),    'Reply-to address differs from sender'),
+    ('has_spelling_errors',      lambda f: f.get('has_spelling_errors', False),   'Contains spelling errors'),
+    ('phishing_keywords_count',  lambda f: f.get('phishing_keywords_count', 0) > 2,
+                                                                                   lambda f: f"Contains {f['phishing_keywords_count']} phishing keywords"),
+    ('urgency_score',            lambda f: f.get('urgency_score', 0) > 3,         lambda f: f"High urgency language (score: {f['urgency_score']})"),
+    ('num_links',                lambda f: f.get('num_links', 0) > 5,             lambda f: f"Many links ({f['num_links']})"),
+]
+
+
+def _suspicious_features(features: Dict, input_type: str) -> List[Dict]:
+    checks = _URL_CHECKS if input_type == 'url' else _EMAIL_CHECKS
     suspicious = []
 
-    if input_type == 'url':
-        checks = [
-            ('has_ip_address', features.get('has_ip_address', False), 'Contains IP address instead of domain'),
-            ('has_at_symbol', features.get('has_at_symbol', False), 'Contains @ symbol (credential trick)'),
-            ('is_shortened', features.get('is_shortened', False), 'Uses URL shortening service'),
-            ('has_suspicious_tld', features.get('has_suspicious_tld', False), 'Suspicious top-level domain'),
-            ('brand_in_subdomain', features.get('brand_in_subdomain', False), 'Brand name in subdomain (spoofing)'),
-            ('has_double_slash', features.get('has_double_slash', False), 'Double slash in path (redirection)'),
-        ]
-        if features.get('url_length', 0) > 75:
-            checks.append(('url_length', True, f"Very long URL ({features['url_length']} chars)"))
-        if features.get('subdomain_count', 0) > 2:
-            checks.append(('subdomain_count', True, f"Many subdomains ({features['subdomain_count']})"))
-        if features.get('suspicious_keywords_count', 0) > 0:
-            checks.append(('suspicious_keywords_count', True, f"Contains {features['suspicious_keywords_count']} suspicious keywords"))
-        if features.get('entropy', 0) > 4.5:
-            checks.append(('entropy', True, f"High entropy ({features['entropy']:.2f}) - possibly random/generated"))
-    else:
-        checks = [
-            ('has_html', features.get('has_html', False), 'Contains HTML content'),
-            ('has_suspicious_patterns', features.get('has_suspicious_patterns', False), 'Contains suspicious patterns'),
-            ('sender_mismatch', features.get('sender_mismatch', False), 'Sender display name mismatch'),
-            ('reply_to_different', features.get('reply_to_different', False), 'Reply-to address differs from sender'),
-            ('has_spelling_errors', features.get('has_spelling_errors', False), 'Contains spelling errors'),
-        ]
-        if features.get('phishing_keywords_count', 0) > 2:
-            checks.append(('phishing_keywords_count', True, f"Contains {features['phishing_keywords_count']} phishing keywords"))
-        if features.get('urgency_score', 0) > 3:
-            checks.append(('urgency_score', True, f"High urgency language (score: {features['urgency_score']})"))
-        if features.get('num_links', 0) > 5:
-            checks.append(('num_links', True, f"Many links ({features['num_links']})"))
-
-    for feature, condition, description in checks:
-        if condition:
+    for key, condition_fn, description in checks:
+        if condition_fn(features):
+            desc = description(features) if callable(description) else description
             suspicious.append({
-                'feature': feature,
-                'description': description,
-                'severity': 'high' if feature in ['has_ip_address', 'has_at_symbol', 'brand_in_subdomain'] else 'medium'
+                'feature':     key,
+                'description': desc,
+                'severity':    'high' if key in _HIGH_SEVERITY else 'medium',
             })
 
     return suspicious
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.route('/', methods=['GET'])
 def index():
-    return jsonify({'message': 'PhishGuard API is running', 'version': '1.0.0'})
+    return jsonify({'message': 'PhishGuard API', 'version': '2.0.0'})
 
 
 @app.route('/api/ping', methods=['GET'])
 def ping():
-    return jsonify({
-        'ok': True,
-        'models_ready': len(loaded_models) > 0,
-        'models_loaded': get_model_list()
-    }), 200
+    return jsonify({'ok': True}), 200
 
 
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({
-        'status': 'healthy',
-        'models_loaded': get_model_list(),
-        'timestamp': datetime.now().isoformat()
+        'status':        'healthy',
+        'models_loaded': list(models.keys()),
+        'timestamp':     datetime.now().isoformat(),
     })
 
 
 @app.route('/api/models', methods=['GET'])
 def get_models():
-    models = [
+    model_list = [
         {'name': name, 'display_name': name.replace('_', ' ').title(), 'loaded': True}
-        for name in get_model_list()
+        for name in models
     ]
-    return jsonify({'models': models, 'count': len(models)})
+    return jsonify({'models': model_list, 'count': len(model_list)})
 
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No JSON body provided'}), 400
+
+    input_data = data.get('input', '').strip()
+    input_type = data.get('type', 'auto').lower()
+    model_name = data.get('model', 'random_forest')
+
+    if not input_data:
+        return jsonify({'error': 'No input provided'}), 400
+
     try:
-        if not loaded_models:
-            return jsonify({'error': 'Models are still loading. Please wait a moment and try again.'}), 503
-        data = request.get_json()
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        input_data = data.get('input', '').strip()
-        input_type = data.get('type', 'auto').lower()
-        model_name = data.get('model', 'random_forest')
-        if not input_data:
-            return jsonify({'error': 'No input provided'}), 400
-        result = make_prediction(input_data, input_type, model_name)
-        if 'error' in result:
-            return jsonify(result), 400
+        result = _single_predict(input_data, input_type, model_name)
         return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
 
 
 @app.route('/api/predict/all', methods=['POST'])
-def predict_all_models():
+def predict_all():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No JSON body provided'}), 400
+
+    input_data = data.get('input', '').strip()
+    input_type = data.get('type', 'auto').lower()
+
+    if not input_data:
+        return jsonify({'error': 'No input provided'}), 400
+
     try:
-        if not loaded_models:
-            return jsonify({'error': 'Models are still loading. Please wait a moment and try again.'}), 503
-        data = request.get_json()
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        input_data = data.get('input', '').strip()
-        input_type = data.get('type', 'auto').lower()
-        if not input_data:
-            return jsonify({'error': 'No input provided'}), 400
-        results = []
-        for model_name in get_model_list():
-            result = make_prediction(input_data, input_type, model_name)
-            if 'error' not in result:
-                results.append({
-                    'model': model_name,
-                    'result': result['result'],
-                    'confidence': result['confidence'],
-                    'is_phishing': result['is_phishing']
-                })
-        phishing_votes = sum(1 for r in results if r['is_phishing'])
-        avg_confidence = float(np.mean([r['confidence'] for r in results])) if results else 0
+        return jsonify(_ensemble_predict(input_data, input_type))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/analyze', methods=['POST'])
+def analyze():
+    """Return extracted features + suspicious indicators without running ML."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No JSON body provided'}), 400
+
+    input_data = data.get('input', '').strip()
+    input_type = data.get('type', 'auto').lower()
+
+    if not input_data:
+        return jsonify({'error': 'No input provided'}), 400
+
+    try:
+        features      = extract_features(input_data, input_type)
+        detected_type = features.pop('input_type', 'unknown')
+        suspicious    = _suspicious_features(features, detected_type)
+
         return jsonify({
-            'individual_results': results,
-            'consensus': 'Phishing' if phishing_votes > len(results) / 2 else 'Legitimate',
-            'consensus_confidence': round(avg_confidence, 2),
-            'agreement_ratio': f"{phishing_votes}/{len(results)}",
-            'timestamp': datetime.now().isoformat()
+            'input_type':            detected_type,
+            'features':              features,
+            'suspicious_indicators': suspicious,
+            'risk_score':            len(suspicious) * 10,
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
 
 
 @app.route('/api/metrics', methods=['GET'])
 def get_metrics():
-    try:
-        metrics_path = os.path.join(MODEL_DIR, 'metrics.json')
-        if os.path.exists(metrics_path):
-            with open(metrics_path, 'r') as f:
-                metrics = json.load(f)
-            return jsonify({'metrics': metrics})
-        else:
-            default_metrics = [
-                {'model_name': 'logistic_regression', 'accuracy': 0.92, 'precision': 0.89, 'recall': 0.94, 'f1_score': 0.91},
-                {'model_name': 'random_forest', 'accuracy': 0.96, 'precision': 0.94, 'recall': 0.97, 'f1_score': 0.95},
-                {'model_name': 'neural_network', 'accuracy': 0.94, 'precision': 0.92, 'recall': 0.95, 'f1_score': 0.93},
-                {'model_name': 'svm', 'accuracy': 0.93, 'precision': 0.91, 'recall': 0.94, 'f1_score': 0.92},
-            ]
-            return jsonify({'metrics': default_metrics})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    metrics_path = os.path.join(MODEL_DIR, 'metrics.json')
+    if os.path.exists(metrics_path):
+        with open(metrics_path) as fh:
+            return jsonify({'metrics': json.load(fh)})
+
+    # Fallback placeholder so the UI never breaks before training is run
+    fallback = [
+        {'model_name': 'logistic_regression', 'accuracy': 0.92, 'precision': 0.89, 'recall': 0.94, 'f1_score': 0.91},
+        {'model_name': 'random_forest',        'accuracy': 0.96, 'precision': 0.94, 'recall': 0.97, 'f1_score': 0.95},
+        {'model_name': 'neural_network',       'accuracy': 0.94, 'precision': 0.92, 'recall': 0.95, 'f1_score': 0.93},
+        {'model_name': 'svm',                  'accuracy': 0.93, 'precision': 0.91, 'recall': 0.94, 'f1_score': 0.92},
+    ]
+    return jsonify({'metrics': fallback})
 
 
 @app.route('/api/features/importance', methods=['GET'])
-def get_feature_importance():
-    try:
-        model_name = request.args.get('model', 'random_forest')
-        trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
-        importance = trainer.get_feature_importance(model_name)
-        if importance:
-            return jsonify({'model': model_name, 'feature_importance': importance})
-        return jsonify({'error': 'Feature importance not available'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+def feature_importance():
+    model_name = request.args.get('model', 'random_forest')
+    if model_name not in models:
+        return jsonify({'error': f"Model '{model_name}' not loaded"}), 404
 
+    model = models[model_name]
 
-@app.route('/api/analyze', methods=['POST'])
-def analyze_input():
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        input_data = data.get('input', '').strip()
-        input_type = data.get('type', 'auto').lower()
-        if not input_data:
-            return jsonify({'error': 'No input provided'}), 400
-        features = extract_features(input_data, input_type)
-        input_type_detected = features.pop('input_type', 'unknown')
-        suspicious = identify_suspicious_features(features, input_type_detected)
-        return jsonify({
-            'input_type': input_type_detected,
-            'features': features,
-            'suspicious_indicators': suspicious,
-            'risk_score': len(suspicious) * 10
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    if hasattr(model, 'feature_importances_'):
+        scores = model.feature_importances_
+    elif hasattr(model, 'coef_'):
+        scores = np.abs(model.coef_[0])
+    else:
+        return jsonify({'error': 'Feature importance not available for this model'}), 404
 
-
-@app.route('/api/train', methods=['POST'])
-def retrain_models():
-    try:
-        data = request.get_json() or {}
-        n_samples = data.get('n_samples', 3000)
-        trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
-        X, y = trainer.generate_synthetic_dataset(n_samples=n_samples)
-        results = trainer.train_all_models(X, y)
-        load_models()
-        return jsonify({
-            'message': 'Models retrained successfully',
-            'results': results,
-            'timestamp': datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    importance = dict(sorted(
+        zip(feature_names, scores.tolist()),
+        key=lambda kv: kv[1],
+        reverse=True,
+    ))
+    return jsonify({'model': model_name, 'feature_importance': importance})
 
 
 @app.route('/api/sample/urls', methods=['GET'])
-def get_sample_urls():
+def sample_urls():
     return jsonify({
         'legitimate': [
             'https://www.google.com',
             'https://github.com/login',
             'https://www.amazon.com/gp/yourstore',
             'https://www.microsoft.com/en-us',
-            'https://apple.com/shop'
+            'https://apple.com/shop',
         ],
         'phishing': [
             'http://192.168.1.1/login.php',
             'http://secure-paypal.com.verify-account.net/login',
             'http://amaz0n-security.com/verify',
             'http://login.facebook.com.evil-site.com/',
-            'http://bit.ly/suspicious-link-123'
-        ]
+            'http://bit.ly/suspicious-link-123',
+        ],
     })
 
 
 @app.route('/api/sample/emails', methods=['GET'])
-def get_sample_emails():
+def sample_emails():
     return jsonify({
         'legitimate': [
-            "Hi John,\n\nJust wanted to follow up on our meeting yesterday. Let me know if you have any questions.\n\nBest regards,\nSarah",
-            "Your Amazon order #12345 has been shipped. Track your package at amazon.com/orders"
+            "Hi John,\n\nJust wanted to follow up on our meeting yesterday.\n\nBest regards,\nSarah",
+            "Your Amazon order #12345 has been shipped. Track at amazon.com/orders",
         ],
         'phishing': [
-            "URGENT: Your PayPal account has been suspended! Click here immediately to verify your credentials: http://evil.com/login",
-            "Dear Customer,\n\nWe noticed unusual activity on your account. Please verify your credit card information immediately to avoid suspension."
-        ]
+            "URGENT: Your PayPal account has been suspended! Click here immediately: http://evil.com/login",
+            "Dear Customer,\n\nUnusual activity detected. Verify your credit card immediately to avoid suspension.",
+        ],
     })
 
 
+# ── Error handlers ───────────────────────────────────────────────────────────
+
 @app.errorhandler(404)
-def not_found(error):
+def not_found(_):
     return jsonify({'error': 'Endpoint not found'}), 404
 
 
 @app.errorhandler(500)
-def internal_error(error):
+def server_error(_):
     return jsonify({'error': 'Internal server error'}), 500
 
 
-# Auto-train on startup in background so port binds immediately
-def startup_training():
-    global _models_ready
-    with app.app_context():
-        print("PhishGuard API starting up...")
-        success = load_models()
-        if not success:
-            print("No trained models found. Training fast models first...")
-            trainer = PhishingModelTrainer(model_dir=MODEL_DIR)
-            X, y = trainer.generate_synthetic_dataset(n_samples=500)
-            X_train, X_test, y_train, y_test, scaler = trainer.prepare_data(X, y)
-            trainer.feature_names = X.columns.tolist()
-            joblib.dump(trainer.feature_names, os.path.join(MODEL_DIR, "feature_names.pkl"))
-            for model_name, train_func in [
-                ("logistic_regression", trainer.train_logistic_regression),
-                ("random_forest", trainer.train_random_forest),
-            ]:
-                print(f"Training {model_name}...")
-                model = train_func(X_train, y_train)
-                joblib.dump(model, os.path.join(MODEL_DIR, f"{model_name}.pkl"))
-                joblib.dump(scaler, os.path.join(MODEL_DIR, f"{model_name}_scaler.pkl"))
-            load_models()
-            print("Fast models ready. Training SVM + NN in background...")
-            for model_name, train_func in [
-                ("neural_network", trainer.train_neural_network),
-                ("svm", trainer.train_svm),
-            ]:
-                try:
-                    model = train_func(X_train, y_train)
-                    joblib.dump(model, os.path.join(MODEL_DIR, f"{model_name}.pkl"))
-                    joblib.dump(scaler, os.path.join(MODEL_DIR, f"{model_name}_scaler.pkl"))
-                    load_models()
-                except Exception as e:
-                    print(f"Skipping {model_name}: {e}")
-        _models_ready = True
-        print(f"✓ {len(loaded_models)} models ready: {get_model_list()}")
-
-threading.Thread(target=startup_training, daemon=True).start()
-
+# ── Dev entry point ──────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
