@@ -19,6 +19,7 @@ Production (Render / gunicorn):
 
 import json
 import os
+from dataclasses import asdict
 from datetime import datetime
 from typing import Dict, List
 
@@ -28,6 +29,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from feature_extraction import extract_features
+from xai import XAIEngine, summarize
 
 # ── App setup ────────────────────────────────────────────────────────────────
 
@@ -90,6 +92,16 @@ def _load_models() -> None:
 
 # Load at import time so the first request is fast
 _load_models()
+
+# XAI engine wraps the same models/scalers with SHAP explainers. Wrapped in
+# try/except deliberately: if explainer setup ever breaks, core prediction
+# endpoints should keep working — XAI is an enhancement layer, not a
+# hard dependency for the rest of the app.
+xai_engine = None
+try:
+    xai_engine = XAIEngine(models, scalers, feature_names)
+except Exception as exc:
+    print(f"[warn] XAI engine failed to initialize: {exc}")
 
 
 # ── Preprocessing ────────────────────────────────────────────────────────────
@@ -161,6 +173,25 @@ def _ensemble_predict(input_data: str, input_type: str) -> Dict:
         'agreement_ratio':      f'{phishing_votes}/{total}',
         'timestamp':            datetime.now().isoformat(),
     }
+
+
+def _model_comparison(raw_features: Dict) -> List[Dict]:
+    """Every loaded model's verdict + confidence on the same input — used for
+    the confidence-calibration chart. No SHAP here; this is deliberately cheap."""
+    comparison = []
+    for name, model in models.items():
+        X = _vectorise(raw_features, name)
+        pred = model.predict(X)[0]
+        proba = model.predict_proba(X)[0] if hasattr(model, 'predict_proba') else [0.5, 0.5]
+        is_phishing = bool(pred == 1)
+        comparison.append({
+            'model':                name,
+            'result':               'Phishing' if is_phishing else 'Legitimate',
+            'is_phishing':          is_phishing,
+            'confidence':           round(float(proba[1] if is_phishing else proba[0]) * 100, 2),
+            'phishing_probability': round(float(proba[1]) * 100, 2),
+        })
+    return comparison
 
 
 # ── Suspicious-feature annotation ───────────────────────────────────────────
@@ -274,6 +305,57 @@ def predict_all():
 
     try:
         return jsonify(_ensemble_predict(input_data, input_type))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/explain', methods=['POST'])
+def explain():
+    """SHAP-backed explanation for one model's verdict on one input:
+    top contributing features, a plain-English summary, per-model
+    confidence comparison, and what-if counterfactual suggestions."""
+    if xai_engine is None:
+        return jsonify({'error': 'XAI engine not available'}), 503
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No JSON body provided'}), 400
+
+    input_data = data.get('input', '').strip()
+    input_type = data.get('type', 'auto').lower()
+    model_name = data.get('model', 'random_forest')
+
+    if not input_data:
+        return jsonify({'error': 'No input provided'}), 400
+    if model_name not in models:
+        return jsonify({'error': f"Model '{model_name}' not loaded"}), 404
+
+    try:
+        raw_features  = extract_features(input_data, input_type)
+        detected_type = raw_features.pop('input_type', 'unknown')
+
+        explanation   = xai_engine.explain(model_name, raw_features)
+        what_if       = xai_engine.what_if(model_name, raw_features)
+        plain_summary = summarize(explanation)
+        comparison    = _model_comparison(raw_features)
+
+        is_phishing = explanation.predicted_probability >= 0.5
+        confidence  = explanation.predicted_probability if is_phishing else 1 - explanation.predicted_probability
+
+        return jsonify({
+            'model_used':            model_name,
+            'input_type':            detected_type,
+            'result':                'Phishing' if is_phishing else 'Legitimate',
+            'is_phishing':           is_phishing,
+            'confidence':            round(confidence * 100, 2),
+            'phishing_probability':  round(explanation.predicted_probability * 100, 2),
+            'base_value':            round(explanation.base_value, 4),
+            'summary':               plain_summary,
+            'top_features':          [asdict(c) for c in explanation.top(10)],
+            'what_if':               [asdict(s) for s in what_if],
+            'model_comparison':      comparison,
+            'timestamp':             datetime.now().isoformat(),
+        })
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
 
