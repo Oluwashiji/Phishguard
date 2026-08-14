@@ -40,6 +40,47 @@ export interface AllModelsPrediction {
   timestamp: string;
 }
 
+export interface FeatureContribution {
+  feature: string;
+  label: string;
+  value: number | boolean;
+  shap_value: number;
+  direction: 'phishing' | 'legitimate';
+}
+
+export interface WhatIfSuggestion {
+  feature: string;
+  label: string;
+  original_value: number | boolean;
+  suggested_value: number | boolean;
+  original_probability: number;
+  new_probability: number;
+  would_flip: boolean;
+}
+
+export interface ModelComparisonEntry {
+  model: string;
+  result: string;
+  is_phishing: boolean;
+  confidence: number;
+  phishing_probability: number;
+}
+
+export interface ExplainResult {
+  model_used: string;
+  input_type: string;
+  result: string;
+  is_phishing: boolean;
+  confidence: number;
+  phishing_probability: number;
+  base_value: number;
+  summary: string;
+  top_features: FeatureContribution[];
+  what_if: WhatIfSuggestion[];
+  model_comparison: ModelComparisonEntry[];
+  timestamp: string;
+}
+
 class ApiService {
   private async fetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -72,6 +113,13 @@ class ApiService {
     return this.fetch<AllModelsPrediction>('/predict/all', {
       method: 'POST',
       body: JSON.stringify({ input, type }),
+    });
+  }
+
+  async explain(input: string, type = 'auto', model = 'random_forest'): Promise<ExplainResult> {
+    return this.fetch<ExplainResult>('/explain', {
+      method: 'POST',
+      body: JSON.stringify({ input, type, model }),
     });
   }
 

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Shield, ShieldAlert, ShieldCheck, Link2, Mail, AlertTriangle,
-  CheckCircle, XCircle, Loader, Zap, ChevronDown, Copy, RotateCcw, Info
+  CheckCircle, XCircle, Loader, Zap, ChevronDown, Copy, RotateCcw, Info, Sparkles
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type PredictionResult } from '../services/api';
+import { ExplainPanel } from '../components/ExplainPanel';
 
 const MODELS = [
   { name: 'random_forest', label: 'Random Forest' },
@@ -36,6 +37,7 @@ export function Dashboard() {
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [showModelDrop, setShowModelDrop] = useState(false);
   const [showFeatures, setShowFeatures] = useState(false);
+  const [showExplain, setShowExplain] = useState(false);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -51,6 +53,7 @@ export function Dashboard() {
     setScanning(true);
     setProgress(0);
     setResult(null);
+    setShowExplain(false);
     const iv = setInterval(() => setProgress(p => Math.min(p + Math.random() * 18, 88)), 180);
     try {
       const res = await api.predict(input.trim(), tab, model);
@@ -291,6 +294,31 @@ export function Dashboard() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Explain This Prediction (collapsible SHAP panel) */}
+          <div className="pg-card" style={{ overflow: 'hidden', marginBottom: '16px' }}>
+            <button
+              onClick={() => setShowExplain(!showExplain)}
+              style={{
+                width: '100%', padding: '16px 20px', background: 'none', border: 'none',
+                display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
+              }}
+            >
+              <Sparkles size={15} style={{ color: 'var(--blue)' }} />
+              <span className="font-display" style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)' }}>
+                Explain This Prediction
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--text-dim)', marginLeft: 4 }}>
+                (SHAP breakdown, model agreement, what-if)
+              </span>
+              <ChevronDown size={14} style={{ marginLeft: 'auto', color: 'var(--text-dim)', transform: showExplain ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
+            </button>
+            {showExplain && (
+              <div style={{ borderTop: '1px solid var(--border)' }}>
+                <ExplainPanel input={input.trim()} inputType={tab} model={result.model_used} />
+              </div>
+            )}
           </div>
 
           {/* Risk indicators + Features row */}
