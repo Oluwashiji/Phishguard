@@ -37,26 +37,29 @@ BINARY_FEATURES = {
 #    input (e.g. a short domain_length pushes legitimate; wording it as
 #    "long" would contradict the direction). The sign/color in the UI is
 #    what conveys good-vs-bad — the label is just the fact.
+def _pluralize(count, singular: str, plural: str) -> str:
+    n = int(count)
+    return f'{n} {singular if n == 1 else plural}'
 FEATURE_META = {
     'url_length':                {'phrase': lambda v: f'a URL that is {int(v)} characters long'},
     'domain_length':             {'phrase': lambda v: f'a domain name that is {int(v)} characters long'},
     'path_length':               {'phrase': lambda v: f'a URL path that is {int(v)} characters long'},
     'has_https':                 {'on': 'uses HTTPS', 'off': 'does not use HTTPS'},
-    'num_dots':                  {'phrase': lambda v: f'{int(v)} dots in the URL'},
-    'num_hyphens':               {'phrase': lambda v: f'{int(v)} hyphens in the URL'},
-    'num_underscores':           {'phrase': lambda v: f'{int(v)} underscores in the URL'},
-    'num_slashes':               {'phrase': lambda v: f'{int(v)} slashes in the URL'},
-    'num_digits':                {'phrase': lambda v: f'{int(v)} digits in the URL'},
-    'num_special_chars':         {'phrase': lambda v: f'{int(v)} special characters in the URL'},
+    'num_dots':                  {'phrase': lambda v: f'{_pluralize(v, "dot", "dots")} in the URL'},
+    'num_hyphens':               {'phrase': lambda v: f'{_pluralize(v, "hyphen", "hyphens")} in the URL'},
+    'num_underscores':           {'phrase': lambda v: f'{_pluralize(v, "underscore", "underscores")} in the URL'},
+    'num_slashes':               {'phrase': lambda v: f'{_pluralize(v, "slash", "slashes")} in the URL'},
+    'num_digits':                {'phrase': lambda v: f'{_pluralize(v, "digit", "digits")} in the URL'},
+    'num_special_chars':         {'phrase': lambda v: f'{_pluralize(v, "special character", "special characters")} in the URL'},
     'has_ip_address':            {'on': 'uses an IP address instead of a domain name',
                                    'off': 'uses a proper domain name rather than a raw IP address'},
     'has_at_symbol':             {'on': 'contains an @ symbol (a common credential-masking trick)',
                                    'off': 'contains no @ symbol'},
     'has_double_slash':          {'on': 'has a double slash in the path (a redirection trick)',
                                    'off': 'has no double slash in the path'},
-    'suspicious_keywords_count': {'phrase': lambda v: f'{int(v)} suspicious keywords found'},
+    'suspicious_keywords_count': {'phrase': lambda v: f'{_pluralize(v, "suspicious keyword", "suspicious keywords")} found'},
     'is_shortened':               {'on': 'uses a URL shortening service', 'off': 'is not a shortened link'},
-    'subdomain_count':           {'phrase': lambda v: f'{int(v)} subdomains'},
+    'subdomain_count':           {'phrase': lambda v: _pluralize(v, "subdomain", "subdomains")},
     'has_suspicious_tld':        {'on': 'uses a suspicious top-level domain',
                                    'off': 'uses a common top-level domain'},
     'brand_in_subdomain':        {'on': 'has a brand name embedded in the subdomain (a spoofing tactic)',
